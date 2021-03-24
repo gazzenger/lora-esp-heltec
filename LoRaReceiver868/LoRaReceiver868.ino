@@ -9,6 +9,27 @@
   https://github.com/Heltec-Aaron-Lee/WiFi_Kit_series
 */
 
+/*
+ * Originally taken from
+ * https://lastminuteengineers.com/creating-esp32-web-server-arduino-ide/
+ */
+#include <WiFi.h>
+#include <WebServer.h>
+
+/*
+ * Based on the link
+ * https://randomnerdtutorials.com/esp32-web-server-spiffs-spi-flash-file-system/
+ * https://github.com/me-no-dev/ESPAsyncWebServer
+ * https://github.com/me-no-dev/AsyncTCP
+ */
+//#include "ESPAsyncWebServer.h"
+
+/*
+ * The SPIFFS library is used for accessing the binary files uploaded to the ESP
+ * https://techtutorialsx.com/2018/09/11/esp32-arduino-web-server-serving-jquery/
+ */
+#include "SPIFFS.h"
+
 #include <SPI.h>
 #include <LoRa.h>
 #include <math.h>
@@ -19,6 +40,26 @@
 #endif
 BluetoothSerial SerialBT;
 
+
+
+/*
+ * Files are uploaded through the "data" directory
+ * The plugin is found here
+ * https://github.com/me-no-dev/arduino-esp32fs-plugin
+ */
+
+
+/* Put your SSID & Password */
+const char* ssid = "ESP32";  // Enter SSID here
+const char* password = "12345678";  //Enter Password here
+
+/* Put IP Address details */
+IPAddress local_ip(192,168,1,1);
+IPAddress gateway(192,168,1,1);
+IPAddress subnet(255,255,255,0);
+
+//AsyncWebServer server(80);  // Object of WebServer(HTTP port, 80 is defult)
+WebServer server(80);  // Object of WebServer(HTTP port, 80 is defult)
 
 #include "HardwareSerial.h"
 #include <TinyGPS.h> 
@@ -115,6 +156,57 @@ void init_diplay()
 
 
 void setup() {
+
+  WiFi.softAP(ssid, password);
+  WiFi.softAPConfig(local_ip, gateway, subnet);
+  delay(100);
+
+/*
+ * Based on the link
+ * https://techtutorialsx.com/2018/09/11/esp32-arduino-web-server-serving-jquery/
+ */
+  if(!SPIFFS.begin()){
+       Serial.println("An Error has occurred while mounting SPIFFS");
+       return;
+  }
+
+/*
+ * Based on the link
+ * https://tttapa.github.io/ESP8266/Chap11%20-%20SPIFFS.html
+ */
+  server.onNotFound([]() {                              // If the client requests any URI
+    if (!handleFileRead(server.uri()))                  // send it if it exists
+      server.send(404, "text/plain", "404: Not Found"); // otherwise, respond with a 404 (Not Found) error
+  });
+
+/*
+ * Taken from the link
+ * https://electropeak.com/learn/create-a-web-server-w-esp32/
+ */
+//  server.on("/", handle_root);
+
+/*
+ * Based on the link
+ * https://techtutorialsx.com/2018/09/11/esp32-arduino-web-server-serving-jquery/
+ */
+//  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+//      request->send(SPIFFS, "/index.html", "text/html");
+//  });
+//  server.on("/jquery-3.6.0.min.js", HTTP_GET, [](AsyncWebServerRequest *request){
+//    request->send(SPIFFS, "/jquery-3.6.0.min.js", "text/javascript");
+//  });
+//  server.on("/bootstrap.bundle.min.js", HTTP_GET, [](AsyncWebServerRequest *request){
+//    request->send(SPIFFS, "/bootstrap.bundle.min.js", "text/javascript");
+//  });
+//  server.on("/bootstrap.min.css", HTTP_GET, [](AsyncWebServerRequest *request){
+//    request->send(SPIFFS, "/bootstrap.min.css", "text/css");
+//  });
+//  server.onNotFound(handle_NotFound);
+
+  server.begin();
+  delay(100); 
+
+  
   init_diplay();
   display.clear();
   //display.setTextSize(1);
@@ -159,6 +251,8 @@ void setup() {
 int time_out =0;
 
 void loop() {
+
+  server.handleClient();
 
   // bluetooth serial read
   char ch;
@@ -308,9 +402,56 @@ byte i=0;
 }
 
 
+/*
+ * Taken from the link
+ * https://electropeak.com/learn/create-a-web-server-w-esp32/
+ */
+//String HTML = "<!DOCTYPE html>\
+//<html>\
+//<body>\
+//<h1>My First Web Server with ESP32 - Station Mode &#128522;</h1>\
+//</body>\
+//</html>";
+//
+//// Handle root url (/)
+//void handle_root() {
+//  server.send(200, "text/html", HTML);
+//}
+//
+//
+//void handle_NotFound(){
+//  server.send(404, "text/plain", "Not found");
+//}
 
 
 
+
+
+/*
+ * Based on the link
+ * https://tttapa.github.io/ESP8266/Chap11%20-%20SPIFFS.html
+ */
+String getContentType(String filename) { // convert the file extension to the MIME type
+  if (filename.endsWith(".html")) return "text/html";
+  else if (filename.endsWith(".css")) return "text/css";
+  else if (filename.endsWith(".js")) return "application/javascript";
+  else if (filename.endsWith(".ico")) return "image/x-icon";
+  return "text/plain";
+}
+
+bool handleFileRead(String path) { // send the right file to the client (if it exists)
+  Serial.println("handleFileRead: " + path);
+  if (path.endsWith("/")) path += "index.html";         // If a folder is requested, send the index file
+  String contentType = getContentType(path);            // Get the MIME type
+  if (SPIFFS.exists(path)) {                            // If the file exists
+    File file = SPIFFS.open(path, "r");                 // Open it
+    size_t sent = server.streamFile(file, contentType); // And send it to the client
+    file.close();                                       // Then close the file again
+    return true;
+  }
+  Serial.println("\tFile Not Found");
+  return false;                                         // If the file doesn't exist, return false
+}
 
 
 
